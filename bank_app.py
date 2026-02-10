@@ -1,123 +1,100 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
+import streamlit.components.v1 as components
+import re
 
-# ML
-from sklearn.linear_model import LogisticRegression
+st.title("🏦 Bank Challan Filling System (Voice + Fraud Detection)")
+st.write("Voice enabled online Streamlit app with fraud detection")
 
-# Speech
-import speech_recognition as sr
+# ---------------- VOICE INPUT (BROWSER) ----------------
+components.html(
+"""
+<button onclick="startDictation()">🎙️ Start Voice Input</button>
+<p id="output"></p>
 
-# -------------------- PAGE CONFIG --------------------
-st.set_page_config(page_title="Bank Account Management", layout="centered")
+<script>
+function startDictation() {
+    if (window.hasOwnProperty('webkitSpeechRecognition')) {
+        var recognition = new webkitSpeechRecognition();
+        recognition.lang = "en-US";
+        recognition.start();
 
-st.title("🏦 Bank Account Management System")
-st.caption("ML Fraud Detection + Speech Based Application Form")
-
-# -------------------- SPEECH FUNCTION --------------------
-def speech_to_text():
-    r = sr.Recognizer()
-    with sr.Microphone() as source:
-        st.info("🎤 Speak now...")
-        audio = r.listen(source)
-        try:
-            text = r.recognize_google(audio)
-            return text
-        except:
-            return "Speech not recognized"
-
-# -------------------- SIDEBAR --------------------
-menu = st.sidebar.selectbox(
-    "Select Option",
-    ["Account Application", "Transaction", "Admin – Fraud Detection"]
+        recognition.onresult = function(e) {
+            document.getElementById('output').innerHTML = e.results[0][0].transcript;
+        };
+    } else {
+        alert("Speech recognition not supported");
+    }
+}
+</script>
+""",
+height=150,
 )
 
-# -------------------- ACCOUNT APPLICATION --------------------
-if menu == "Account Application":
-    st.subheader("📝 Bank Account Application Form")
+st.info("👆 Speak → copy the text → paste into fields below")
 
-    if st.button("🎤 Fill Name Using Voice"):
-        name = speech_to_text()
-        st.session_state["name"] = name
+# ---------------- FORM INPUT ----------------
+name = st.text_input("Name")
+account = st.text_input("Account Number")
+bank = st.text_input("Bank Name")
+branch = st.text_input("Branch")
+amount = st.number_input("Amount", min_value=0)
+purpose = st.text_input("Purpose of Payment")
 
-    name = st.text_input("Full Name", st.session_state.get("name", ""))
+# ---------------- FRAUD DETECTION FUNCTION ----------------
+def detect_fraud(name, account, bank, amount, purpose):
+    fraud_reasons = []
 
-    if st.button("🎤 Fill Mobile Using Voice"):
-        mobile = speech_to_text()
-        st.session_state["mobile"] = mobile
+    if not account.isdigit() or not (10 <= len(account) <= 16):
+        fraud_reasons.append("Invalid account number")
 
-    mobile = st.text_input("Mobile Number", st.session_state.get("mobile", ""))
+    if amount > 100000:
+        fraud_reasons.append("Amount exceeds safe limit")
 
-    if st.button("🎤 Fill Address Using Voice"):
-        address = speech_to_text()
-        st.session_state["address"] = address
+    if re.search(r"\d", name):
+        fraud_reasons.append("Name contains numbers")
 
-    address = st.text_area("Address", st.session_state.get("address", ""))
+    if len(bank) < 3:
+        fraud_reasons.append("Invalid bank name")
 
-    account_type = st.selectbox("Account Type", ["Savings", "Current"])
-    deposit = st.number_input("Initial Deposit Amount", min_value=500)
+    suspicious_words = ["illegal", "fake", "scam", "hack"]
+    if any(word in purpose.lower() for word in suspicious_words):
+        fraud_reasons.append("Suspicious payment purpose")
 
-    if st.button("Submit Application"):
-        st.success("✅ Account Application Submitted Successfully!")
-        st.write("### Application Details")
-        st.write("Name:", name)
-        st.write("Mobile:", mobile)
-        st.write("Address:", address)
-        st.write("Account Type:", account_type)
-        st.write("Deposit Amount:", deposit)
+    if fraud_reasons:
+        return "⚠️ Suspicious", fraud_reasons
+    else:
+        return "✅ Safe", []
 
-# -------------------- TRANSACTION PAGE --------------------
-elif menu == "Transaction":
-    st.subheader("💸 Make a Transaction")
+# ---------------- SUBMIT ----------------
+if st.button("Submit Challan"):
+    status, reasons = detect_fraud(name, account, bank, amount, purpose)
 
-    amount = st.number_input("Transaction Amount", min_value=1)
-    transaction_time = st.slider("Transaction Time (Hour)", 0, 23, 12)
-    location = st.selectbox("Transaction Location", ["Home City", "Other City", "International"])
-    frequency = st.slider("Transactions Today", 1, 20, 1)
+    data = {
+        "Name": name,
+        "Account Number": account,
+        "Bank Name": bank,
+        "Branch": branch,
+        "Amount": amount,
+        "Purpose": purpose,
+        "Transaction Status": status
+    }
 
-    if st.button("Submit Transaction"):
-        st.success("💰 Transaction Submitted")
-        st.write("Amount:", amount)
-        st.write("Time:", transaction_time)
-        st.write("Location:", location)
-        st.write("Frequency:", frequency)
+    df = pd.DataFrame([data])
 
-# -------------------- FRAUD DETECTION (ADMIN) --------------------
-elif menu == "Admin – Fraud Detection":
-    st.subheader("🚨 Fraud Detection Dashboard")
+    st.subheader("📄 Challan Details")
+    st.dataframe(df)
 
-    # Dummy training data
-    X = np.array([
-        [100, 10, 0, 1],
-        [5000, 2, 2, 10],
-        [200, 14, 0, 2],
-        [10000, 1, 2, 15],
-        [300, 11, 1, 1]
-    ])
+    if status == "⚠️ Suspicious":
+        st.error("🚨 Fraud Alert Detected!")
+        for r in reasons:
+            st.write("•", r)
+    else:
+        st.success("✅ Transaction is Safe")
 
-    y = np.array([0, 1, 0, 1, 0])  # 0 = Normal, 1 = Fraud
-
-    model = LogisticRegression()
-    model.fit(X, y)
-
-    st.write("### Test a Transaction")
-
-    amt = st.number_input("Amount", min_value=1)
-    time = st.slider("Hour", 0, 23, 12)
-    loc = st.selectbox("Location Code", ["0 - Home", "1 - Other City", "2 - International"])
-    freq = st.slider("Transaction Frequency", 1, 20, 1)
-
-    loc_code = int(loc[0])
-
-    if st.button("Check Fraud"):
-        input_data = np.array([[amt, time, loc_code, freq]])
-        prediction = model.predict(input_data)
-
-        if prediction[0] == 1:
-            st.error("🚨 FRAUD DETECTED! Transaction Blocked")
-        else:
-            st.success("✅ Transaction is SAFE")
-
-# -------------------- FOOTER --------------------
-st.markdown("---")
-st.caption("AI Powered Banking System | Streamlit + ML + Speech Recognition")
+    st.download_button(
+        "⬇️ Download Challan CSV",
+        df.to_csv(index=False).encode(),
+        "bank_challan.csv",
+        "text/csv"
+    )
